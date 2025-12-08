@@ -1,5 +1,5 @@
 import random
-from typing import List, Tuple, Optional, Dict, Union
+from typing import List, Tuple, Dict, Union
 
 GRID_SIZE: Tuple[int, int] = (10, 10)
 ROWS, COLS = GRID_SIZE
@@ -36,17 +36,14 @@ def initialize_grid() -> Grid:
     """Initializes the mutable grid state with animals, food, and obstacles."""
     grid: Grid = [[None for _ in range(COLS)] for _ in range(ROWS)]
     
-    # Place initial animals
     rabbit1 = Animal(10, 1, 1, 'Rabbit')
     rabbit2 = Animal(20, 3, 4, 'Rabbit')
     rabbit3 = Animal(30, 8, 8, 'Rabbit')
     
-    # Direct index assignment
     grid[1][1] = rabbit1
     grid[3][4] = rabbit2
     grid[8][8] = rabbit3
     
-    # Place Obstacles ('#') and Food ('F') randomly
     for _ in range(int(ROWS * COLS * 0.1)): 
         r, c = random.randint(0, ROWS - 1), random.randint(0, COLS - 1)
         if grid[r][c] is None:
@@ -60,7 +57,6 @@ def initialize_grid() -> Grid:
     return grid
 
 def move_safe(r: int, c: int, dr: int, dc: int) -> Tuple[int, int]:
-    #Calculates the new position
     new_r = (r + dr) % ROWS
     new_c = (c + dc) % COLS
     return new_r, new_c
@@ -80,23 +76,20 @@ def process_turn_imperative(grid: Grid, animal: Animal, step_stats: Dict[str, in
         step_stats['deaths_starvation'] += 1
         return
 
-    # 2. Update energy and age
     animal.energy -= 3 
     animal.age += 1 
 
-    # 3. Calculate Move
+    # 2. Calculate Move
     dr, dc = get_random_direction()
     new_r, new_c = move_safe(animal.r, animal.c, dr, dc)
     
     target_cell = grid[new_r][new_c]
     
-    # Handle Obstacle
     if target_cell == '#':
         animal.energy -= 1 
         step_stats['obstacle_encounters'] += 1
         return
 
-    # Handle Conflict/Interaction with another Animal
     if isinstance(target_cell, Animal) and target_cell.id != animal.id:
         animal.energy -= 2  
         step_stats['conflicts'] += 1
@@ -139,7 +132,6 @@ def sim_step_imperative(grid: Grid) -> Dict[str, int]:
         'obstacle_encounters': 0, 'conflicts': 0
     }
     
-    # 1. Collect all animals and reset 'moved' state
     animals_to_process: List[Animal] = []
     for r in range(ROWS): 
         for c in range(COLS): 

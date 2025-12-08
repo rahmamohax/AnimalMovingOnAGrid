@@ -1,7 +1,7 @@
 import random
-from typing import List, Tuple, Dict, Callable, Union
+from typing import List, Tuple, Dict, Union
 
-# --- 1. Data Structures (Immutable) ---
+
 GRID_SIZE: Tuple[int, int] = (10, 10)
 ROWS, COLS = GRID_SIZE
 # Animal is an immutable dictionary (Record Data Structure)
