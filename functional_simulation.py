@@ -232,10 +232,10 @@ def sim_step(current_grid: Grid) -> Tuple[Grid, Stats]:
     # Recursive collection replaces comprehension
     initial_animals: List[Tuple[Tuple[int, int], Animal]] = sorted(
         collect_animals(current_grid),
-        key=lambda item: item[1]['id']
+        key=lambda item: item[1]['id'] #HOP
     )
 
-    def recursive_processor(
+    def recursive_processor(                                    #HOP (Procedure Values)
         remaining_animals: List[Tuple[Tuple[int, int], Animal]],
         accumulated_grid: Grid,
         accumulated_stats: Stats

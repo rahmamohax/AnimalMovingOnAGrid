@@ -5,7 +5,6 @@ GRID_SIZE: Tuple[int, int] = (10, 10)
 ROWS, COLS = GRID_SIZE
 
 class Animal:
-    """Represents a creature in the simulation with mutable state."""
     def __init__(self, animal_id: int, r: int, c: int, type: str, energy: int = 10, age: int = 0):
         self.id = animal_id
         self.r = r  # Row 
@@ -49,7 +48,7 @@ def initialize_grid() -> Grid:
         if grid[r][c] is None:
             grid[r][c] = '#'
 
-    for _ in range(int(ROWS * COLS * 0.15)): 
+    for _ in range(int(ROWS * COLS * 0.25)): 
         r, c = random.randint(0, ROWS - 1), random.randint(0, COLS - 1)
         if grid[r][c] is None:
             grid[r][c] = 'F' 
@@ -76,7 +75,7 @@ def process_turn_imperative(grid: Grid, animal: Animal, step_stats: Dict[str, in
         step_stats['deaths_starvation'] += 1
         return
 
-    animal.energy -= 3 
+    animal.energy -= 1 
     animal.age += 1 
 
     # 2. Calculate Move
@@ -139,8 +138,9 @@ def sim_step_imperative(grid: Grid) -> Dict[str, int]:
             if isinstance(animal, Animal):
                 animals_to_process.append(animal)
                 animal.moved = False 
+
+    animals_to_process.sort(key=lambda animal: animal.energy) #HOP
     
-    # 2. Process turns
     for animal in animals_to_process: 
         process_turn_imperative(grid, animal, step_stats)
         
@@ -148,7 +148,6 @@ def sim_step_imperative(grid: Grid) -> Dict[str, int]:
     return step_stats
 
 def run_simulation_imperative(grid: Grid, steps: int):
-    """Main entry point for the imperative simulation using a procedural while loop."""
     print("--- IMPERATIVE SIMULATION (Procedural Programming) ---")
     
     i = 0
