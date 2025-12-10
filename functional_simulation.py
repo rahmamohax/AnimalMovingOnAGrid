@@ -1,64 +1,160 @@
 import random
 from typing import List, Tuple, Dict, Union
 
-
 GRID_SIZE: Tuple[int, int] = (10, 10)
 ROWS, COLS = GRID_SIZE
-# Animal is an immutable dictionary (Record Data Structure)
+
 Animal = Dict[str, any]
-# Grid is an immutable dictionary mapping position to content (Stateless Data Structure)
+
 GridContent = Union[Animal, str]
 Grid = Dict[Tuple[int, int], GridContent]
 Stats = Dict[str, int]
 
-# Global/Constant initial stats (Note: Mutating this is a compromise for final reporting. 
-# In pure FP, the stats would be accumulated entirely through function arguments.)
-GLOBAL_STATS: Stats = {'total_deaths': 0, 'total_births': 0, 'food_eaten': 0, 'steps': 0}
+# Precomputed directions to avoid building lists inside recursive calls
+DIRECTIONS = ((0, 1), (0, -1), (1, 0), (-1, 0))
+DIRECTIONS_WITH_STAY = DIRECTIONS + ((0, 0),)
 
-# --- 2. Higher-Order Functions & Utility Functions ---
+
+
+def initial_global_stats() -> Stats:
+    """Created a pure initializer for stats to avoid mutating globals."""
+    return {'total_deaths': 0, 'total_births': 0, 'food_eaten': 0, 'steps': 0}
+
 
 def move_safe(pos: Tuple[int, int], direction: Tuple[int, int]) -> Tuple[int, int]:
-    """Calculates the new position, wrapping around the grid (pure function)."""
+    """Calculates the new position, wrapping around the grid"""
     new_r = (pos[0] + direction[0]) % ROWS
     new_c = (pos[1] + direction[1]) % COLS
     return (new_r, new_c)
 
+
 def get_random_direction() -> Tuple[int, int]:
-    """Returns a random cardinal direction (pure function)."""
-    return random.choice([(0, 1), (0, -1), (1, 0), (-1, 0), (0, 0)])
+    return random.choice(DIRECTIONS_WITH_STAY)
+
 
 def merge_stats(stats1: Stats, stats2: Stats) -> Stats:
-    """Pure function to combine two immutable stats dictionaries (Function Composition)."""
-    return {k: stats1.get(k, 0) + stats2.get(k, 0) for k in set(stats1) | set(stats2)}
+    all_keys = list(set(stats1) | set(stats2))
+
+    def _merge(keys: List[str], idx: int, acc: Stats) -> Stats:
+        if idx == len(keys):
+            return acc
+        key = keys[idx]
+        next_acc = {**acc, key: stats1.get(key, 0) + stats2.get(key, 0)}
+        return _merge(keys, idx + 1, next_acc)
+
+    return _merge(all_keys, 0, {})
+
+
+def update_totals(global_stats: Stats, step_stats: Stats) -> Stats:
+    """Accumulates totals without mutating shared state (functional fold)."""
+    return {
+        'total_deaths': global_stats['total_deaths'] + step_stats['deaths_starvation'],
+        'total_births': global_stats['total_births'] + step_stats['births'],
+        'food_eaten': global_stats['food_eaten'] + step_stats['food_eaten'],
+        'steps': global_stats['steps'] + 1
+    }
+
+
+def build_coords(r: int = 0, c: int = 0, acc: List[Tuple[int, int]] = None) -> List[Tuple[int, int]]:
+    """Recursive grid coordinate builder."""
+    acc = [] if acc is None else acc
+    if r == ROWS:
+        return acc
+    next_acc = acc + [(r, c)]
+    next_r, next_c = (r + 1, 0) if c + 1 == COLS else (r, c + 1)
+    return build_coords(next_r, next_c, next_acc)
+
+
+def place_entities(coords: List[Tuple[int, int]], grid: Grid, remaining: int, marker: GridContent) -> Tuple[Grid, List[Tuple[int, int]]]:
+    if remaining == 0 or not coords:
+        return grid, coords
+    head, *tail = coords
+    if head in grid:
+        return place_entities(tail, grid, remaining, marker)
+    new_grid = {**grid, head: marker}
+    return place_entities(tail, new_grid, remaining - 1, marker)
+
+
+def copy_grid_without(grid: Grid, skip_positions: set) -> Grid:
+    """Recursively copies the grid while skipping provided positions."""
+    items = list(grid.items())
+
+    def _copy(idx: int, acc: Grid) -> Grid:
+        if idx == len(items):
+            return acc
+        pos, content = items[idx]
+        if pos in skip_positions:
+            return _copy(idx + 1, acc)
+        return _copy(idx + 1, {**acc, pos: content})
+
+    return _copy(0, {})
+
+
+    # Returns a list of ((row, col), animal_dict) for each animal
+def collect_animals(grid: Grid) -> List[Tuple[Tuple[int, int], Animal]]:
+    """Recursively gathers animals (replaces list comprehension)."""
+    items = list(grid.items())
+
+    def _collect(idx: int, acc: List[Tuple[Tuple[int, int], Animal]]) -> List[Tuple[Tuple[int, int], Animal]]:
+        if idx == len(items):
+            return acc
+        pos, content = items[idx]
+        if isinstance(content, dict) and 'id' in content:
+            return _collect(idx + 1, acc + [(pos, content)])
+        return _collect(idx + 1, acc)
+
+    return _collect(0, [])
+
+
+def count_animals(grid: Grid) -> int:
+    items = list(grid.values())
+
+    def _count(idx: int, acc: int) -> int:
+        if idx == len(items):
+            return acc
+        increment = 1 if isinstance(items[idx], dict) and 'id' in items[idx] else 0
+        return _count(idx + 1, acc + increment)
+
+    return _count(0, 0)
+
+
+def generate_neighbors(origin: Tuple[int, int]) -> List[Tuple[int, int]]:
+    """ builds neighbor list to avoid comprehension."""
+    directions = DIRECTIONS
+
+    def _build(idx: int, acc: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
+        if idx == len(directions):
+            return acc
+        next_acc = acc + [move_safe(origin, directions[idx])]
+        return _build(idx + 1, next_acc)
+
+    return _build(0, [])
+
+
+def find_first_empty(spots: List[Tuple[int, int]], grid: Grid, idx: int = 0) -> Union[Tuple[int, int], None]:
+    """finds the first empty neighbor"""
+    if idx == len(spots):
+        return None
+    if spots[idx] not in grid:
+        return spots[idx]
+    return find_first_empty(spots, grid, idx + 1)
+
 
 def initialize_grid() -> Grid:
-    """A pure function to create the initial state (Stateless initialization)."""
-    initial_grid: Grid = {}
-    
-    # Place initial animals
-    initial_grid[(1, 1)] = {'id': 10, 'energy': 10, 'age': 0, 'type': 'Rabbit'}
-    initial_grid[(3, 4)] = {'id': 20, 'energy': 10, 'age': 0, 'type': 'Rabbit'}
-    initial_grid[(8, 8)] = {'id': 30, 'energy': 10, 'age': 0, 'type': 'Rabbit'}
-    
-    all_coords = [(r, c) for r in range(ROWS) for c in range(COLS)]
-    random.shuffle(all_coords)
+    """Pure recursive initialization of the grid (no loops)."""
+    initial_grid: Grid = {
+        (1, 1): {'id': 10, 'energy': 10, 'age': 0, 'type': 'Rabbit'},
+        (3, 4): {'id': 20, 'energy': 10, 'age': 0, 'type': 'Rabbit'},
+        (8, 8): {'id': 30, 'energy': 10, 'age': 0, 'type': 'Rabbit'},
+    }
 
-    # Place Obstacles ('#') and Food ('F') in remaining empty spots (using immutability)
-    temp_grid = initial_grid
-    
-    # Immutability: Creates a new dictionary at each step instead of mutating `temp_grid`
-    for _ in range(int(ROWS * COLS * 0.1)): 
-        pos = all_coords.pop()
-        if pos not in temp_grid:
-            temp_grid = {**temp_grid, pos: '#'} 
+    coords = random.sample(build_coords(), ROWS * COLS)  # randomness preserved without loops
+    obstacle_count = int(ROWS * COLS * 0.1)
+    food_count = int(ROWS * COLS * 0.25)
 
-    # Immutability: Creates a new dictionary at each step
-    for _ in range(int(ROWS * COLS * 0.15)):
-        pos = all_coords.pop()
-        if pos not in temp_grid:
-            temp_grid = {**temp_grid, pos: 'F'} 
-            
-    return temp_grid
+    grid_with_obstacles, remaining = place_entities(coords, initial_grid, obstacle_count, '#')
+    grid_with_food, _ = place_entities(remaining, grid_with_obstacles, food_count, 'F')
+    return grid_with_food
 
 
 # Higher-Order Function: Processes a single animal's turn
@@ -67,91 +163,63 @@ def pure_process_animal_turn(grid: Grid, pos: Tuple[int, int], animal: Animal) -
     Handles a single animal's movement and interaction (Pure Function).
     Returns a new grid state and the immutable statistics generated by this turn.
     """
-    
+
     turn_stats: Stats = {
         'deaths_starvation': 0, 'births': 0, 'food_eaten': 0,
         'obstacle_encounters': 0, 'conflicts': 0
     }
 
-    # 1. Death Check 
     if animal['energy'] <= 0:
-        # Returns grid without the animal (Immutability: new dictionary)
-        new_grid = {p: a for p, a in grid.items() if p != pos}
+        # Recursive copy replaces comprehension-based removal
+        new_grid = copy_grid_without(grid, {pos})
         turn_stats['deaths_starvation'] = 1
-        GLOBAL_STATS['total_deaths'] += 1 
         return new_grid, turn_stats
 
-    # 2. Update Animal State (Immutability: create new Animal dictionary)
-    energy_cost = 3 
+    energy_cost = 2
     updated_animal = {**animal, 'energy': animal['energy'] - energy_cost, 'age': animal['age'] + 1}
-    
-    # 3. Calculate Move and New Grid (Immutability: create new Grid)
+
     direction = get_random_direction()
     new_pos = move_safe(pos, direction)
     target_content = grid.get(new_pos)
-    
-    # Base new grid: Remove animal from its current position
-    # Uses dictionary comprehension to maintain immutability
-    grid_after_move_attempt = {p: a for p, a in grid.items() if p != pos}
-    
-    final_pos = pos # Default: stay put
-    
-    # --- Interaction Logic (Purely functional state machine) ---
+
+    # Remove current position (and optionally consumed food) 
+    skip_positions = {pos} | ({new_pos} if target_content == 'F' else set())
+    grid_after_move = copy_grid_without(grid, skip_positions)
+
+    final_pos = pos
+
     if target_content == '#':
-        # Blocked by obstacle, stay put, lose extra energy
-        updated_animal['energy'] -= 1
+        updated_animal = {**updated_animal, 'energy': updated_animal['energy'] - 1}
         turn_stats['obstacle_encounters'] = 1
-        final_pos = pos 
-        
+        final_pos = pos
+
     elif isinstance(target_content, dict) and 'id' in target_content:
-        # Conflict, stay put, lose energy
-        updated_animal['energy'] -= 1
+        updated_animal = {**updated_animal, 'energy': updated_animal['energy'] - 1}
         turn_stats['conflicts'] = 1
-        final_pos = pos 
-        
+        final_pos = pos
+
     elif target_content == 'F':
-        # Food consumed: move to new position, gain energy, clear food spot
-        updated_animal['energy'] += 5 
+        updated_animal = {**updated_animal, 'energy': updated_animal['energy'] + 5}
         turn_stats['food_eaten'] = 1
         final_pos = new_pos
-        
-    else: # Empty or None
+
+    else:
         final_pos = new_pos
-        
-    # Build the final grid for this animal's turn:
-    # Start with the grid state minus the old animal position
-    final_grid = {p: c for p, c in grid_after_move_attempt.items()}
 
-    # Copy all other entities from the original grid (maintaining immutability)
-    for p, c in grid.items():
-        if p != pos:
-            # If target was food, do NOT copy the 'F' back to final_grid (consumed)
-            if p == new_pos and target_content == 'F':
-                continue
-            final_grid[p] = c
-    
-    # Place the updated animal (this overwrites the food 'F' if it was there and eaten)
-    final_grid[final_pos] = updated_animal
+    final_grid = {**grid_after_move, final_pos: updated_animal}
 
-
-    # --- Reproduction (Stateless condition) ---
     if updated_animal['energy'] > 5 and updated_animal['age'] > 2 and random.random() < 0.25:
-        
-        # Genericity/Function Composition: Find neighboring empty spot
-        neighbors = [move_safe(final_pos, d) for d in [(0, 1), (1, 0), (0, -1), (-1, 0)]]
-        
-        # Use filter (Higher-Order Function) to find the first empty spot
-        empty_spots = list(filter(lambda p: p not in final_grid, neighbors))
-        
-        if empty_spots:
-            baby_pos = empty_spots[0]
+        neighbors = generate_neighbors(final_pos)
+        empty_spot = find_first_empty(neighbors, final_grid)
+
+        if empty_spot:
             baby: Animal = {'id': random.randint(100, 999), 'energy': 3, 'age': 0, 'type': animal['type']}
-            
-            # Immutability: Create new grid with the baby and updated parent energy
-            final_grid = {**final_grid, baby_pos: baby, final_pos: {**updated_animal, 'energy': updated_animal['energy'] // 2}}
-            
+            final_grid = {
+                **final_grid,
+                empty_spot: baby,
+                final_pos: {**updated_animal, 'energy': updated_animal['energy'] // 2}
+            }
             turn_stats['births'] = 1
-            GLOBAL_STATS['total_births'] += 1
 
     return final_grid, turn_stats
 
@@ -160,17 +228,16 @@ def pure_process_animal_turn(grid: Grid, pos: Tuple[int, int], animal: Animal) -
 
 def sim_step(current_grid: Grid) -> Tuple[Grid, Stats]:
     """Performs one step of the simulation, accumulating state changes and stats."""
-    
-    # Collect animals to process (immutable list of items, sorted for determinism)
+
+    # Recursive collection replaces comprehension
     initial_animals: List[Tuple[Tuple[int, int], Animal]] = sorted(
-        [(pos, content) for pos, content in current_grid.items() if isinstance(content, dict) and 'id' in content],
+        collect_animals(current_grid),
         key=lambda item: item[1]['id']
     )
-    
-    # Helper for the Tail-Recursive loop
+
     def recursive_processor(
-        remaining_animals: List[Tuple[Tuple[int, int], Animal]], 
-        accumulated_grid: Grid, 
+        remaining_animals: List[Tuple[Tuple[int, int], Animal]],
+        accumulated_grid: Grid,
         accumulated_stats: Stats
     ) -> Tuple[Grid, Stats]:
         """
@@ -180,95 +247,90 @@ def sim_step(current_grid: Grid) -> Tuple[Grid, Stats]:
         Principle of Communicating Vases: S shrinks (remaining_animals) while A grows (accumulated_grid).
         """
         if not remaining_animals:
-            # Base case: All animals processed, A is the answer (Tail Recursion)
             return accumulated_grid, accumulated_stats
+        (pos, animal) = remaining_animals[0]
+        rest = remaining_animals[1:]
+
+        current_content = accumulated_grid.get(pos)
+
+        if isinstance(current_content, dict) and 'id' in current_content and current_content['id'] == animal['id']:
+            new_grid, turn_stats = pure_process_animal_turn(accumulated_grid, pos, animal)
+            new_stats = merge_stats(accumulated_stats, turn_stats)
         else:
-            # Recursive step (Divide and Conquer)
-            (pos, animal) = remaining_animals[0]
-            rest = remaining_animals[1:]
-            
-            current_content = accumulated_grid.get(pos)
-            
-            if isinstance(current_content, dict) and 'id' in current_content and current_content['id'] == animal['id']:
-                # Purely apply the animal's turn to the accumulated grid
-                new_grid, turn_stats = pure_process_animal_turn(accumulated_grid, pos, animal)
-                new_stats = merge_stats(accumulated_stats, turn_stats)
-            else:
-                # Animal was already processed or is no longer at 'pos', skip
-                new_grid = accumulated_grid
-                new_stats = accumulated_stats
-            
-            # Recursive call is the LAST operation (Tail Recursion)
-            return recursive_processor(rest, new_grid, new_stats)
+            new_grid = accumulated_grid
+            new_stats = accumulated_stats
+
+        return recursive_processor(rest, new_grid, new_stats)
 
     initial_stats: Stats = {
         'deaths_starvation': 0, 'births': 0, 'food_eaten': 0,
         'obstacle_encounters': 0, 'conflicts': 0
     }
-    
-    # The final state of the grid after all recursion is complete
+
     return recursive_processor(initial_animals, current_grid, initial_stats)
 
 
-def run_simulation(initial_grid: Grid, steps: int) -> Tuple[Grid, Stats]:
+def run_simulation(initial_grid: Grid, steps: int, global_stats: Stats = None) -> Tuple[Grid, Stats]:
     """
     Main entry point for the simulation. Uses recursion (Divide and Conquer).
     The steps variable acts as the control for the outer recursion.
     """
+    stats_acc = initial_global_stats() if global_stats is None else global_stats
     if steps == 0:
-        # Base case
-        return initial_grid, GLOBAL_STATS
-    
-    # Function Composition: sim_step is composed with run_simulation
+        return initial_grid, stats_acc
+
     next_grid, step_stats = sim_step(initial_grid)
-    
-    print(f"\n======== STEP {GLOBAL_STATS['steps'] + 1} ========")
-    GLOBAL_STATS['steps'] += 1 
-    
+    updated_global_stats = update_totals(stats_acc, step_stats)
+
+    print(f"\n======== STEP {updated_global_stats['steps']} ========")
+
     display_grid(next_grid)
-    
-    current_animals = sum(1 for c in next_grid.values() if isinstance(c, dict) and 'id' in c)
+
+    current_animals = count_animals(next_grid)
     print(f"Animals: {current_animals} (Born: {step_stats['births']}, Died: {step_stats['deaths_starvation']})")
     print(f"Interactions: Food Eaten: {step_stats['food_eaten']}, Obstacles Hit: {step_stats['obstacle_encounters']}")
-    
+
     if current_animals == 0:
         print("\nECOSYSTEM COLLAPSED: All animals are gone.")
-        return next_grid, GLOBAL_STATS
-        
-    # Recursive call
-    return run_simulation(next_grid, steps - 1)
+        return next_grid, updated_global_stats
+
+    return run_simulation(next_grid, steps - 1, updated_global_stats)
 
 
-def display_grid(grid: Grid):
-    """Prints the grid state (pure visualization, no side effects)."""
-    # Legend: R=Rabbit, F=Food, #=Obstacle, .=Empty
-    print("-" * (COLS * 3 + 1))
-    for r in range(ROWS):
-        row_str = "|"
-        for c in range(COLS):
-            content = grid.get((r, c))
-            
-            display_char = '.'
-            if isinstance(content, dict) and 'id' in content:
-                display_char = content['type'][0]
-            elif content == 'F':
-                display_char = 'F'
-            elif content == '#':
-                display_char = '#'
-                
-            row_str += f" {display_char} |"
-        print(row_str)
-        print("-" * (COLS * 3 + 1))
+def build_row(grid: Grid, r: int, c: int = 0, acc: str = "|") -> str:
+    """Recursive row builder to replace nested display loops."""
+    if c == COLS:
+        return f"{acc}"
+    content = grid.get((r, c))
+    display_char = '.'
+    if isinstance(content, dict) and 'id' in content:
+        display_char = content['type'][0]
+    elif content == 'F':
+        display_char = 'F'
+    elif content == '#':
+        display_char = '#'
+    next_acc = f"{acc} {display_char} |"
+    return build_row(grid, r, c + 1, next_acc)
 
 
-# --- 4. Initialization and Run ---
+def display_grid(grid: Grid, row: int = 0):
+    """Prints the grid state recursively."""
+    separator = "-" * (COLS * 3 + 1)
+    if row == 0:
+        print(separator)
+    if row == ROWS:
+        return
+    print(build_row(grid, row))
+    print(separator)
+    return display_grid(grid, row + 1)
+
+
 
 if __name__ == '__main__':
     initial_state = initialize_grid()
     print("--- FUNCTIONAL SIMULATION (Initial State) ---")
     display_grid(initial_state)
 
-    # Run 10 simulation steps
     final_state, final_stats = run_simulation(initial_state, 10)
 
     print("\n--- SIMULATION COMPLETE (Final Accumulator State) ---")
